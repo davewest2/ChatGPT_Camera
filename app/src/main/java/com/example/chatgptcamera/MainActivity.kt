@@ -10,10 +10,7 @@ import android.content.pm.PackageManager
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.hardware.camera2.CameraMetadata
-import android.hardware.usb.UsbAccessory
-import android.hardware.usb.UsbConstants
-import android.hardware.usb.UsbDevice
-import android.hardware.usb.UsbManager
+import android.hardware.usb.*
 import android.hardware.usb.UsbManager.ACTION_USB_DEVICE_ATTACHED
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
@@ -32,6 +29,11 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private val CAMERA_PERMISSION_REQUEST_CODE = 100
+    private lateinit var myUsbDevice: UsbDevice
+    private lateinit var myUsbManager: UsbManager
+    private val forceClaim = true
+    private lateinit var bytes: ByteArray
+    private val TIMEOUT = 0
 
     private val usbReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -39,12 +41,14 @@ class MainActivity : AppCompatActivity() {
                 // A USB device is attached, check if it is a camera and request permission
                 val device = intent.getParcelableExtra<UsbDevice>(UsbManager.EXTRA_DEVICE)
                 if (device?.isCamera() == true) {
-                    val usbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
+                    myUsbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
                     Log.d(TAG, "isCamera has registered as true, usbmanager established")
                     val permissionIntent = PendingIntent.getBroadcast(context, 0, Intent(
                         CAMERA_SERVICE), 0)
-                    usbManager.requestPermission(device, permissionIntent)
+                    myUsbManager.requestPermission(device, permissionIntent)
                     Log.d(TAG, "request permission should have fired")
+                    myUsbDevice = device
+
                 } else {
                     Log.d(TAG, "isCamera has registered as false")
                 }
@@ -67,10 +71,59 @@ class MainActivity : AppCompatActivity() {
         registerReceiver(usbReceiver, filter)
         Log.d(TAG, "receiver registered after onCreate")
 
-        binding.takePicture.setOnClickListener {
 
+
+        binding.takePicture.setOnClickListener {
+            val interfacecount = myUsbDevice.interfaceCount
+            Log.d(TAG, "Interface count established $interfacecount")
+
+            var usbInterfaceTemp: UsbInterface?
+            var usbInterface: UsbInterface? = null
+            var endpointIN: UsbEndpoint?
+            var endpointOUT: UsbEndpoint? = null
+            for (i in 0 until interfacecount + 1) {
+                Log.d(TAG, "Interface count is $interfacecount")
+                usbInterfaceTemp = myUsbDevice.getInterface(i)
+                Log.d(TAG, "device.getinterface($i) loop started")
+                Log.d(TAG, "endpoint count ${usbInterfaceTemp.endpointCount}")
+                if (usbInterfaceTemp.endpointCount == 1) {
+                    //for (j in 0 until usbInterfaceTemp.endpointCount+1) {
+                    Log.d(TAG, "device.getinterfacetemp.endpointcount loop started")
+                    val usbEndpointTemp = usbInterfaceTemp.getEndpoint(0)
+                    Log.d(TAG, "endpoint type ${usbEndpointTemp.type}")
+                    if (usbEndpointTemp.type == UsbConstants.USB_ENDPOINT_XFERTYPE_MASK) {
+                        Log.d(TAG, "endpoint type SUB_ENDPOINT_XFERTYPE_MASK loop started")
+                        Log.d(TAG, "endpoint direction is ${usbEndpointTemp.direction}")
+                        if (usbEndpointTemp.direction == UsbConstants.USB_DIR_IN) {
+                            Log.d(
+                                TAG,
+                                "yes indeed the usbendpointtemp direction is USB_DIR_IN number 128 $usbEndpointTemp"
+                            )
+                            endpointIN = usbEndpointTemp
+                            usbInterface = usbInterfaceTemp
+                            Log.d(TAG, "usbinterface set as usbinterfaceTemp")
+
+                            val usbDeviceConnection = myUsbManager.openDevice(myUsbDevice)
+                            //currently says there is a null object reference for device, maybe because permission not granted?
+                            Log.d(TAG, "manager has opened the device line")
+                            usbDeviceConnection.claimInterface(usbInterface, forceClaim)
+                            Log.d(TAG, "manager has claimed the interface")
+                            Log.d(TAG, "at this point the endpointin is $endpointIN")
+                            val dataReceived = usbDeviceConnection.bulkTransfer(
+                                endpointIN,
+                                bytes,
+                                bytes.size,
+                                TIMEOUT
+                            )
+                            Log.d(TAG, "usbDeviceConnection.bulkTransfer called")
+                            Log.d(TAG, "Data received is $dataReceived")
+                        }
+                    }
+                }
+            }
         }
-    }
+        }
+
 
 
 
@@ -97,7 +150,7 @@ class MainActivity : AppCompatActivity() {
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQUEST_USB_PERMISSION) {
-            Log.d(TAG, "checking requestCode in onRequestPermissionResuilt fun")
+            Log.d(TAG, "checking requestCode in onRequestPermissionResult fun")
             if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 // Permission granted, you can now access the USB camera
                 Toast.makeText(
