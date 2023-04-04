@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">ChatGPT Camera</string>
+    <string name="take_picture">Snap!</string>
+    <string name="find_camera">USB Camera?</string>
+</resources>
